@@ -565,6 +565,3 @@ Heatmap 是小样本机制分析，不是 accuracy 评测。当前结果的共�
   -> 检查样本覆盖和 per-question records
   -> 最后再生成 heatmap/ablation
 ```
-
-任何 `--limit`、4-video 中途 eval、32-frame heatmap 或 temperature sweep 都只能
-视为 diagnostic/validation，不得当作完整 benchmark 结果。

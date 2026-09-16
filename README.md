@@ -214,11 +214,6 @@ python scripts/evaluate_where_to_look.py \
 - No audio token is introduced into the LLM.
 - The evaluation follows causal streaming settings without future audio/video access.
 
-For detailed training configurations and dataset preparation, please refer to:
-
-```
-docs/
-```
 
 ---
 
