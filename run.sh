@@ -1,0 +1,23 @@
+CUDA_VISIBLE_DEVICES=0 \
+WRAPPER=AudioRouter \
+CTR_K=7 \
+CTR_BETA=0.6 \
+CTR_SIMILARITY_THRESHOLD=0.9 \
+CTR_RETAIN_TOKENS=50 \
+OQM_GROUP_SIZE=50 \
+OQM_SLIDING_WINDOW_SIZE=4800 \
+OQM_RETRIEVAL_MAX_TOKENS=12544 \
+OQM_ENABLE_QUANTIZATION=1 \
+OQM_QUANTIZATION_BITS=4 \
+OQM_INIT_TOKEN_COUNT=14 \
+STREAMING_ENCODER_BATCH_SIZE=32 \
+AudioRouter_USE_FULL_PROMPT=0 \
+python -m lmms_eval \
+    --model llava_onevision \
+    --model_args 'pretrained=lmms-lab/llava-onevision-qwen2-7b-ov,fps=auto' \
+    --tasks videomme_short \
+    --batch_size 1 \
+    --limit 1 \
+    --log_samples \
+    --log_samples_suffix SMOKE \
+    --output_path ./results/AudioRouter-videomme-smoke
