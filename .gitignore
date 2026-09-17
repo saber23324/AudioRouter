@@ -1,0 +1,18 @@
+# Django stuff:
+*.log
+*.pt
+wandb/
+
+results/
+LAVIS/
+unilm/
+*.pt
+docs/
+
+# Generated Python bytecode must never be committed. It can retain stale
+# module names after source files are renamed.
+__pycache__/
+*.py[cod]
+
+
+assets/demo_gallery/*
