@@ -16,8 +16,7 @@ remain frozen; only the AudioRouter bottleneck is trained.
 
 ## Verified results
 
-The following numbers were reproduced from scratch on the held-out splits on
-2026-09-17 using real audio, greedy decoding, `fps=auto`, and no frame cap.
+The following numbers were reproduced from scratch using real audio, greedy decoding, `fps=auto`, and no frame cap.
 
 | Benchmark | Checkpoint | Inference tau | Correct / total | Accuracy |
 |---|---|---:|---:|---:|
@@ -29,8 +28,27 @@ The following numbers were reproduced from scratch on the held-out splits on
 | StreamingBench Real-Time | `ckpt/streamingbench_realtime_adbt_epoch3.pt` | 0.05 | 362 / 500 | 72.4000% |
 
 VideoMME Overall is weighted by the number of questions in each split; it is
-not the simple mean of the three percentages. The VideoMME score covers the
-project's held-out 180-video/540-question split, not all 2,700 official rows.
+not the simple mean of the three percentages.
+
+## Inference showcase video
+
+### Pre-rendered causal inference demo
+
+The following is a real AudioRouter inference on StreamingBench
+Real-Time sample. Only the first 4 seconds of video and audio are available to
+the model. AudioRouter predicts the labeled answer, **C. A building with
+BASECAMP written on it**, with **99.24%** probability.
+
+[![Watch the AudioRouter inference demo](assets/02_sample_366.jpg)](assets/02_sample_366.mp4)
+
+Click the preview to play or download the full MP4 with its causal-prefix
+audio. The colored overlay is the audio-conditioned visual routing map; the
+right panel shows the question, option probabilities, prediction, and query
+boundary.
+
+- [Inference demo MP4](assets/02_sample_366.mp4)
+- [Prediction, probabilities, timestamps, and routing diagnostics](assets/02_sample_366.json)
+
 
 ## Released checkpoints
 
@@ -131,19 +149,6 @@ export BEATS_CHECKPOINT=/path/to/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt1.pt
 export BEATS_EMBEDDING_CACHE="$PWD/results/cache/beats"
 ```
 
-## Data and held-out splits
-
-The normalized manifests and deterministic split files are included under
-`results/dataset_manifests/` and `results/dataset_splits/`. Media files are not
-redistributed. Update the `video_path` values in a copied manifest when your
-media root differs from the original layout.
-
-| Benchmark | Manifest / dataset | Held-out split |
-|---|---|---|
-| VideoMME | local Hugging Face `lmms-lab/Video-MME` cache | `results/adbt_videomme_split.json` |
-| MLVU Full MCQA | `results/dataset_manifests/mlvu_full_mcqa.json` | `results/dataset_splits/mlvu_full_mcqa_seed1234_pathgroup_80_20.json` |
-| StreamingBench Real-Time | `results/dataset_manifests/streamingbench_realtime.json` | `results/dataset_splits/streamingbench_realtime_seed1234_80_20.json` |
-
 ## Quick reproduction
 
 The fastest guided entry point is
@@ -207,26 +212,8 @@ Expected result: 362/500 (72.40%) and 60,328 causal-prefix sampled frames.
 Every question is evaluated only with frames/audio available at its own query
 timestamp.
 
-## Inference showcase video
 
-### Pre-rendered causal inference demo
-
-The following is a real AudioRouter inference on a held-out StreamingBench
-Real-Time sample. Only the first 4 seconds of video and audio are available to
-the model. AudioRouter predicts the labeled answer, **C. A building with
-BASECAMP written on it**, with **99.24%** probability.
-
-[![Watch the AudioRouter inference demo](assets/02_sample_366.jpg)](assets/02_sample_366.mp4)
-
-Click the preview to play or download the full MP4 with its causal-prefix
-audio. The colored overlay is the audio-conditioned visual routing map; the
-right panel shows the question, option probabilities, prediction, and query
-boundary.
-
-- [Inference demo MP4](assets/02_sample_366.mp4)
-- [Prediction, probabilities, timestamps, and routing diagnostics](assets/02_sample_366.json)
-
-### Ten-example high-confidence gallery
+<!-- ### Example high-confidence gallery
 
 | Preview | Sample and task | Rerun result |
 |---|---|---|
@@ -237,7 +224,7 @@ boundary.
 | [![sample 308](assets/demo_gallery/07_sample_308.jpg)](assets/demo_gallery/07_sample_308.mp4) | `sample_308`<br>Text-Rich Understanding<br>10 s prefix | **A. UNIVERSAL.**<br>99.74% · [JSON](assets/demo_gallery/07_sample_308.json) |
 | [![sample 452](assets/demo_gallery/08_sample_452.jpg)](assets/demo_gallery/08_sample_452.mp4) | `sample_452`<br>Attribute Perception<br>3 s prefix | **C. Sunny with clear skies.**<br>99.70% · [JSON](assets/demo_gallery/08_sample_452.json) |
 | [![sample 69](assets/demo_gallery/09_sample_69.jpg)](assets/demo_gallery/09_sample_69.mp4) | `sample_69`<br>Action Perception<br>9 s prefix | **A. Two Christmas ornaments.**<br>99.67% · [JSON](assets/demo_gallery/09_sample_69.json) |
-| [![sample 323](assets/demo_gallery/10_sample_323.jpg)](assets/demo_gallery/10_sample_323.mp4) | `sample_323`<br>Attribute Perception<br>11 s prefix | **C. 14 degrees Celsius.**<br>99.63% · [JSON](assets/demo_gallery/10_sample_323.json) |
+| [![sample 323](assets/demo_gallery/10_sample_323.jpg)](assets/demo_gallery/10_sample_323.mp4) | `sample_323`<br>Attribute Perception<br>11 s prefix | **C. 14 degrees Celsius.**<br>99.63% · [JSON](assets/demo_gallery/10_sample_323.json) | -->
 
 The machine-readable gallery summary is available in
 [`assets/demo_gallery/index.json`](assets/demo_gallery/index.json). The gallery
