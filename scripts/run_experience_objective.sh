@@ -47,7 +47,7 @@ case "${VARIANT}" in
 esac
 
 source /home/yxd/miniconda3/etc/profile.d/conda.sh
-conda activate AudioRouter
+conda activate audiorouter
 cd /home/yxd/AudioRouter
 
 export PYTHONNOUSERSITE=1

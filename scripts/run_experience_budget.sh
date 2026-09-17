@@ -36,7 +36,7 @@ for SPLIT in short medium long; do
 done
 
 source /home/yxd/miniconda3/etc/profile.d/conda.sh
-conda activate AudioRouter
+conda activate audiorouter
 python scripts/summarize_videomme_results.py \
   --result short "${ROOT}_short" \
   --result medium "${ROOT}_medium" \

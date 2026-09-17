@@ -1,0 +1,74 @@
+{
+  "video": "/nvme_data/pkt/streaming/dataset/Real_Time_Visual_Understanding_videos/sample_313/video.mp4",
+  "checkpoint": "/home/yxd/AudioRouter/ckpt/streamingbench_realtime_adbt_epoch3.pt",
+  "pretrained": "lmms-lab/llava-onevision-qwen2-7b-ov",
+  "question": "What is prominently visible on the right side of the frame at the beginning of the video?",
+  "options": [
+    "A. A black truck.",
+    "B. A red umbrella.",
+    "C. A building with BASECAMP written on it.",
+    "D. A crosswalk."
+  ],
+  "prediction": "C",
+  "predicted_option": "C. A building with BASECAMP written on it.",
+  "option_probabilities": {
+    "A": 0.0031095470767468214,
+    "B": 0.0016386162023991346,
+    "C": 0.9923760294914246,
+    "D": 0.0028758610133081675
+  },
+  "attention_temperature": 0.05,
+  "query_time_seconds": 4.0,
+  "model_sampling_fps": "auto",
+  "model_max_frames": 0,
+  "sampled_frames": 2,
+  "sampled_timestamps": [
+    0.0,
+    3.9372665882110596
+  ],
+  "audio_encoder": "beats",
+  "audio_enters_llm": false,
+  "adapter_diagnostics": {
+    "stage": 3,
+    "architecture": "phase4",
+    "value_mode": "native",
+    "attention_temperature": 0.05,
+    "input_shape": [
+      2,
+      196,
+      3584
+    ],
+    "output_shape": [
+      2,
+      64,
+      3584
+    ],
+    "audio_conditioned": true,
+    "attention_row_sum_min": 0.9999998807907104,
+    "attention_row_sum_max": 1.000000238418579,
+    "q_norm_mean": 0.4434396028518677,
+    "q_norm_max": 0.5106983184814453,
+    "k_norm_mean": 13.627528190612793,
+    "k_norm_max": 67.25575256347656,
+    "score_min": -10.257362365722656,
+    "score_max": 10.268941879272461,
+    "score_std": 2.572610855102539,
+    "top1_score_mean": 4.9289045333862305,
+    "top2_score_mean": 4.340511322021484,
+    "top1_minus_top2_mean": 0.588392972946167,
+    "top1_minus_top2_max": 2.083690643310547,
+    "attention_entropy_mean": 3.2882699966430664,
+    "effective_support_mean": 31.805992126464844,
+    "query_cosine_mean": 0.4354371726512909,
+    "query_cosine_min": 0.1977815479040146,
+    "query_cosine_max": 0.6592685580253601,
+    "unique_argmax_mean": 22.0,
+    "unique_argmax_min": 16.0,
+    "latent_max_abs": 10.00351333618164,
+    "latent_std": 0.9470798373222351
+  },
+  "output_video": "/home/yxd/AudioRouter/assets/audiorouter_inference_demo.mp4",
+  "render_fps": 10.0,
+  "rendered_prefix_seconds": 4.0,
+  "audio_included": true
+}

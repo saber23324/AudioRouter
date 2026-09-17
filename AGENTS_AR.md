@@ -11,12 +11,12 @@
 
 ## 1. 当前最佳权重
 
-| 数据集 | 当前最佳 checkpoint | SHA256 | 验证配置 | 当前结果 |
-|---|---|---|---|---:|
-| VideoMME | `results/adbt-phase4.1-q64-tau005-epoch3-lr1e5/adbt_epoch_3.pt` | `1230ce639c8621ffcbb9d3d906179a454a1015475f0ee1b7d3957dc50ce631ec` | real audio，推理 tau=0.03 | 60.1852%（325/540） |
-| MLVU Ego | `results/mlvu_ego_adbt_q64_tau005_epoch3_lr1e5/adbt_epoch_3.pt` | `53835943f7d21129520ac532c05c169f422a40b617bb39949dddbae6e4313a1d` | real audio，推理 tau=0.03 | 69.3548%（43/62） |
-| MLVU Full MCQA | `results/mlvu_full_mcqa_q64_tau005_from_ego_epoch3_lr1e5/adbt_epoch_2.pt` | `043b2c7227d841197244816db3c8032f671e4d7e8671b20617f3a41c721cb999` | real audio，推理 tau=0.015 | 67.8322%（291/429） |
-| StreamingBench Real-Time | `/home/yxd/AudioRouter/results/streamingbench_seedall_q64_from_912_video300_hardmargin05_tau055_lr2e6_r3_913/adbt_epoch_3.pt` | `d388e6d3caa35dae619aafb5dac4e65afc39a2d81168da23935a65f5ae97a3a2` | real audio，推理 tau=0.05 | 72%） |
+| 数据集 | 当前最佳 checkpoint  | 验证配置 | 当前结果 |
+|---|---|---|---:|
+| VideoMME | `results/adbt-phase4.1-q64-tau005-epoch3-lr1e5/adbt_epoch_3.pt` |  real audio，推理 tau=0.03 | 60.1852%（325/540） |
+| MLVU Ego | `results/mlvu_ego_adbt_q64_tau005_epoch3_lr1e5/adbt_epoch_3.pt` | real audio，推理 tau=0.03 | 69.3548%（43/62） |
+| MLVU Full MCQA | `results/mlvu_full_mcqa_q64_tau005_from_ego_epoch3_lr1e5/adbt_epoch_2.pt` |  real audio，推理 tau=0.015 | 67.8322%（291/429） |
+| StreamingBench Real-Time | `/home/yxd/AudioRouter/results/streamingbench_seedall_q64_from_912_video300_hardmargin05_tau055_lr2e6_r3_913/adbt_epoch_3.pt` |  real audio，推理 tau=0.05 | 72.40%（362/500） |
 
 /home/yxd/AudioRouter/results/streamingbench_seedall_q64_from_912_video300_hardmargin05_tau055_lr2e6_r3_913
 
@@ -35,8 +35,6 @@
 - `results/adbt-phase4.1-epoch3-tune-infer-tau003-medium/lmms-lab__llava-onevision-qwen2-7b-ov/20260909_185452_results.json`
 - `results/adbt-phase4.1-epoch3-tune-infer-tau003-long/lmms-lab__llava-onevision-qwen2-7b-ov/20260909_191701_results.json`
 
-这些结果使用 lmms-eval 的 VideoMME 官方 accuracy 聚合，但只评测 180 个 held-out
-视频的 540 道题，不是完整 2,700 行的官方 benchmark 分数。
 
 ### MLVU Ego 结果
 
@@ -79,7 +77,7 @@ tau=0.01、其余任务使用 tau=0.015，可得到 tuned/in-sample 292/429（68
 ### StreamingBench Real-Time 结果
 
 ```text
-335 / 500 = 72.40%
+362 / 500 = 72.40%
 sampled frames = 60,328
 peak allocated = cuda:0 11,099.8 MiB / cuda:1 19,437.8 MiB
 peak reserved = cuda:0 11,704 MiB / cuda:1 20,928 MiB
@@ -145,7 +143,7 @@ Audio 只控制视觉压缩权重，不直接进入 LLM；被加权的 Value 全
 
 ```bash
 source /home/yxd/miniconda3/etc/profile.d/conda.sh
-conda activate AudioRouter
+conda activate audiorouter
 cd /home/yxd/AudioRouter
 
 export PYTHONNOUSERSITE=1

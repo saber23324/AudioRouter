@@ -1,5 +1,5 @@
 source /home/yxd/miniconda3/etc/profile.d/conda.sh
-conda activate AudioRouter
+conda activate audiorouter
 cd /home/yxd/AudioRouter
 
 CUDA_VISIBLE_DEVICES=6,7 \

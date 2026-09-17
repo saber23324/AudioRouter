@@ -3,7 +3,7 @@ from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn.functional as F
-from ..modules.AudioRouter_context import AudioRouterContext
+from ..modules.audiorouter_context import AudioRouterContext
 from ..utils.profiler import get_profiler
 
 

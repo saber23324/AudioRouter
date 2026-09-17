@@ -100,7 +100,7 @@ _AudioRouter_CONFIG_INSTANCE = None
 
 
 def AudioRouter(model, model_type: str):
-    from .models.llava.llava_AudioRouter import setup_llava_with_AudioRouter
+    from .models.llava.llava_audiorouter import setup_llava_with_AudioRouter
     config = reload_AudioRouter_config()
     _print_initialization_info(model_type, config)
     model_type = model_type.lower()

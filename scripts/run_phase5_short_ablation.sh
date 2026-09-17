@@ -14,14 +14,25 @@ ATTENTION_TEMPERATURE="${5:-0.05}"
 TASK="${6:-videomme_short}"
 BOTTLENECK_STAGE="${7:-3}"
 
-source /home/yxd/miniconda3/etc/profile.d/conda.sh
-conda activate AudioRouter
-cd /home/yxd/AudioRouter
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "${CONDA_DEFAULT_ENV:-}" != "audiorouter" ]]; then
+  if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base)"
+  elif [[ -f /home/yxd/miniconda3/etc/profile.d/conda.sh ]]; then
+    CONDA_BASE=/home/yxd/miniconda3
+  else
+    echo "conda was not found; activate the audiorouter environment first" >&2
+    exit 1
+  fi
+  source "${CONDA_BASE}/etc/profile.d/conda.sh"
+  conda activate audiorouter
+fi
+cd "${REPO_ROOT}"
 
 export PYTHONNOUSERSITE=1
-export PYTHONPATH=/home/yxd/AudioRouter
+export PYTHONPATH="${REPO_ROOT}/lmms-eval:${REPO_ROOT}/LLaVA-NeXT:${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export CUDA_VISIBLE_DEVICES="${PHYSICAL_GPU}"
-export HF_HOME=/home/yxd/.cache/huggingface
+export HF_HOME="${HF_HOME:-${HOME}/.cache/huggingface}"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export TRANSFORMERS_VERBOSITY=error
@@ -29,7 +40,7 @@ export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export AudioRouter_MEASURE_MEMORY=1
 export WRAPPER=AudioRouter
-export VIDEOMME_SPLIT_FILE=./results/adbt_videomme_split.json
+export VIDEOMME_SPLIT_FILE="${VIDEOMME_SPLIT_FILE:-./results/adbt_videomme_split.json}"
 export VIDEOMME_EVAL_SPLIT=test
 export AUDIO_BOTTLENECK_STAGE="${BOTTLENECK_STAGE}"
 export AUDIO_BOTTLENECK_NUM_QUERIES=64
@@ -47,8 +58,8 @@ export AUDIO_BOTTLENECK_BACKEND=direct
 export AUDIO_BOTTLENECK_LATENT_NORM=none
 export AUDIO_BOTTLENECK_CHECKPOINT="${ADBT_CHECKPOINT}"
 export AUDIO_ABLATION="${AUDIO_MODE}"
-export AUDIO_CROSSVIDEO_PATH=/home/yxd/.cache/huggingface/videomme/data/-QuCz7kxBr8.mp4
-export BEATS_CHECKPOINT=/nvme_data/pkt/huggingface/modules/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt1.pt
+export AUDIO_CROSSVIDEO_PATH="${AUDIO_CROSSVIDEO_PATH:-${HF_HOME}/videomme/data/-QuCz7kxBr8.mp4}"
+export BEATS_CHECKPOINT="${BEATS_CHECKPOINT:-/nvme_data/pkt/huggingface/modules/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt1.pt}"
 export BEATS_BATCH_SIZE=8
 export LLAVA_VISION_ENCODER_BATCH_SIZE=4
 export STREAMING_ENCODER_BATCH_SIZE=4

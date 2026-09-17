@@ -3,7 +3,7 @@ import os
 import torch
 from transformers.cache_utils import DynamicCache
 
-from ..modules.AudioRouter_context import AudioRouterContext
+from ..modules.audiorouter_context import AudioRouterContext
 from ..utils.profiler import get_profiler
 
 PRE_QUESTION = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"

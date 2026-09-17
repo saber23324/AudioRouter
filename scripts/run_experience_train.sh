@@ -17,7 +17,7 @@ WANDB_RUN_ID="${8:-}"
 RUN_NAME="$(basename "${OUTPUT_DIR}")"
 
 source /home/yxd/miniconda3/etc/profile.d/conda.sh
-conda activate AudioRouter
+conda activate audiorouter
 cd /home/yxd/AudioRouter
 
 export PYTHONNOUSERSITE=1

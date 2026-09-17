@@ -1,0 +1,83 @@
+{
+  "video": "/nvme_data/pkt/streaming/dataset/Real_Time_Visual_Understanding_videos/sample_164/video.mp4",
+  "checkpoint": "/home/yxd/AudioRouter/ckpt/streamingbench_realtime_adbt_epoch3.pt",
+  "pretrained": "lmms-lab/llava-onevision-qwen2-7b-ov",
+  "question": "Where is the cyclist located right now?",
+  "options": [
+    "A. At an intersection.",
+    "B. On a bridge.",
+    "C. Passing through a tunnel.",
+    "D. In the middle of an open field."
+  ],
+  "prediction": "A",
+  "predicted_option": "A. At an intersection.",
+  "option_probabilities": {
+    "A": 0.9973152279853821,
+    "B": 0.0010799794690683484,
+    "C": 0.0003617477777879685,
+    "D": 0.0012430486967787147
+  },
+  "attention_temperature": 0.05,
+  "query_time_seconds": 7.0,
+  "model_sampling_fps": "auto",
+  "model_max_frames": 0,
+  "sampled_frames": 4,
+  "sampled_timestamps": [
+    0.0,
+    2.302299976348877,
+    4.604599952697754,
+    6.9402666091918945
+  ],
+  "audio_encoder": "beats",
+  "audio_enters_llm": false,
+  "adapter_diagnostics": {
+    "stage": 3,
+    "architecture": "phase4",
+    "value_mode": "native",
+    "attention_temperature": 0.05,
+    "input_shape": [
+      4,
+      196,
+      3584
+    ],
+    "output_shape": [
+      4,
+      64,
+      3584
+    ],
+    "audio_conditioned": true,
+    "attention_row_sum_min": 0.9999998211860657,
+    "attention_row_sum_max": 1.0000001192092896,
+    "q_norm_mean": 0.48181623220443726,
+    "q_norm_max": 0.5814926624298096,
+    "k_norm_mean": 12.8305025100708,
+    "k_norm_max": 65.61859893798828,
+    "score_min": -10.928712844848633,
+    "score_max": 10.167670249938965,
+    "score_std": 2.653007745742798,
+    "top1_score_mean": 4.890681266784668,
+    "top2_score_mean": 4.2955732345581055,
+    "top1_minus_top2_mean": 0.5951078534126282,
+    "top1_minus_top2_max": 2.418442726135254,
+    "attention_entropy_mean": 3.258099317550659,
+    "effective_support_mean": 30.361473083496094,
+    "query_cosine_mean": 0.5235673785209656,
+    "query_cosine_min": 0.3102985620498657,
+    "query_cosine_max": 0.6988422274589539,
+    "unique_argmax_mean": 19.5,
+    "unique_argmax_min": 17.0,
+    "latent_max_abs": 7.088913440704346,
+    "latent_std": 0.9171733260154724
+  },
+  "output_video": "/home/yxd/AudioRouter/assets/demo_gallery/04_sample_164.mp4",
+  "render_fps": 10.0,
+  "rendered_prefix_seconds": 7.0,
+  "audio_included": true,
+  "dataset": "StreamingBench Real-Time",
+  "videoID": "sample_164",
+  "question_id": "Real-Time Visual Understanding_sample_164_1",
+  "task_type": "Spatial Understanding",
+  "target": "A",
+  "correct": true,
+  "selection_confidence": 0.9969028830528259
+}
