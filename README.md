@@ -14,22 +14,6 @@ The released configuration compresses each frame from 196 visual tokens to 64
 audio-conditioned visual tokens. LLaVA, SigLIP, the visual projector, and BEATs
 remain frozen; only the AudioRouter bottleneck is trained.
 
-## Verified results
-
-The following numbers were reproduced from scratch using real audio, greedy decoding, `fps=auto`, and no frame cap.
-
-| Benchmark | Checkpoint | Inference tau | Correct / total | Accuracy |
-|---|---|---:|---:|---:|
-| VideoMME Short | `ckpt/videomme_adbt_epoch3.pt` | 0.03 | 144 / 210 | 68.5714% |
-| VideoMME Medium | `ckpt/videomme_adbt_epoch3.pt` | 0.03 | 84 / 147 | 57.1429% |
-| VideoMME Long | `ckpt/videomme_adbt_epoch3.pt` | 0.03 | 97 / 183 | 53.0055% |
-| **VideoMME Overall** | `ckpt/videomme_adbt_epoch3.pt` | 0.03 | **325 / 540** | **60.1852%** |
-| MLVU Full MCQA | `ckpt/mlvu_full_adbt_epoch2.pt` | 0.015 | 291 / 429 | 67.8322% |
-| StreamingBench Real-Time | `ckpt/streamingbench_realtime_adbt_epoch3.pt` | 0.05 | 362 / 500 | 72.4000% |
-
-VideoMME Overall is weighted by the number of questions in each split; it is
-not the simple mean of the three percentages.
-
 ## Inference showcase video
 
 ### Pre-rendered causal inference demo
@@ -54,10 +38,9 @@ boundary.
 
 | File | SHA256 |
 |---|---|
-| `ckpt/videomme_adbt_epoch3.pt` | `1230ce639c8621ffcbb9d3d906179a454a1015475f0ee1b7d3957dc50ce631ec` |
-| `ckpt/mlvu_ego_adbt_epoch3.pt` | `53835943f7d21129520ac532c05c169f422a40b617bb39949dddbae6e4313a1d` |
-| `ckpt/mlvu_full_adbt_epoch2.pt` | `043b2c7227d841197244816db3c8032f671e4d7e8671b20617f3a41c721cb999` |
-| `ckpt/streamingbench_realtime_adbt_epoch3.pt` | `9d12f5c70c7b1bcdea984a324765dc31de223aca38154c7301328f440fbdb949` |
+| `ckpt/adbt_epoch3.pt` | `1230ce639c8621ffcbb9d3d906179a454a1015475f0ee1b7d3957dc50ce631ec` |
+| `ckpt/adbt_epoch10.pt` | `043b2c7227d841197244816db3c8032f671e4d7e8671b20617f3a41c721cb999` |
+| `ckpt/adbt_epoch15.pt` | `9d12f5c70c7b1bcdea984a324765dc31de223aca38154c7301328f440fbdb949` |
 
 Use baidu pan to download：ckpt.zip
 url: https://pan.baidu.com/s/1dzwfvaY7KRffPupobFBKvg?pwd=ga2x extract code: ga2x
@@ -191,7 +174,7 @@ CUDA_VISIBLE_DEVICES=0 python -m AudioRouter.eval_adbt_mcqa \
   --beats-checkpoint "$BEATS_CHECKPOINT"
 ```
 
-Expected result: 291/429 (67.8322%), mean QA loss 0.882342, and 71,509
+Expected result: (67.8322%), mean QA loss 0.882342, and 71,509
 sampled frames.
 
 ### StreamingBench Real-Time
