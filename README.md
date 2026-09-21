@@ -23,7 +23,10 @@ Real-Time sample. Only the first 4 seconds of video and audio are available to
 the model. AudioRouter predicts the labeled answer, **C. A building with
 BASECAMP written on it**, with **99.24%** probability.
 
-[![Watch the AudioRouter inference demo](assets/02_sample_366.gif)](assets/02_sample_366.mp4)
+![Watch the AudioRouter inference gif](assets/02_sample_366.gif)
+
+
+[![Watch the AudioRouter inference demo](assets/02_sample_366.jpg)](assets/02_sample_366.mp4)
 
 Click the preview to play or download the full MP4 with its causal-prefix
 audio. The colored overlay is the audio-conditioned visual routing map; the
