@@ -60,6 +60,7 @@ export TOKENIZERS_PARALLELISM=false
 export CUDA_VISIBLE_DEVICES="${PHYSICAL_GPU}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export BEATS_EMBEDDING_CACHE=/home/yxd/AudioRouter/results/cache/beats
+: "${TRAIN_DATASET_MANIFEST:?set TRAIN_DATASET_MANIFEST to an external MCQA manifest}"
 
 INIT_CHECKPOINT=results/adbt-phase4.1-q64-tau005-epoch3-lr1e5/adbt_epoch_3.pt
 RUN_NAME="$(basename "${OUTPUT_DIR}")"
@@ -68,7 +69,7 @@ echo "[EXPERIENCE OBJECTIVE] gpu=${PHYSICAL_GPU} variant=${VARIANT} qa=${QA_WEIG
 
 python -m AudioRouter.train_adbt_videomme \
   --epochs 1 \
-  --split-file ./results/adbt_videomme_split.json \
+  --dataset-manifest "${TRAIN_DATASET_MANIFEST}" \
   --output-dir "${OUTPUT_DIR}" \
   --train-max-frames 32 \
   --max-train-samples "${MAX_TRAIN_SAMPLES}" \
@@ -88,8 +89,7 @@ python -m AudioRouter.train_adbt_videomme \
   --gradient-accumulation-steps 1 --max-grad-norm 1 \
   --log-every 10 --rank-log-every 30 --module-log-every 30 \
   --save-every-videos 20 \
-  --eval-every-steps 100 --eval-max-videos 4 --eval-max-frames 32 \
   --init-adapter "${INIT_CHECKPOINT}" \
-  --wandb --wandb-project AudioRouter-videomme --wandb-entity amd_yes \
+  --wandb --wandb-project AudioRouter --wandb-entity amd_yes \
   --wandb-run-name "${RUN_NAME}" --wandb-mode "${WANDB_MODE}" --wandb-log-every 1 \
   2>&1 | tee "${OUTPUT_DIR}.log"

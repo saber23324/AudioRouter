@@ -1,13 +1,8 @@
-"""Supervised adapter training on a reproducible VideoMME 80/20 split.
+"""Train the AudioRouter adapter from an external MCQA manifest.
 
-VideoMME is distributed as 2,700 question rows but no train split.  This
-script creates a deterministic split by *videoID* so questions from one video
-cannot cross train/test.  The frozen LLaVA backbone supplies projected visual
-features; gradients are restricted to the audio query generator and ADBT.
-
-This is a development split, not the published VideoMME test protocol.  The
-resulting adapter can be evaluated with lmms-eval by setting
-VIDEOMME_SPLIT_FILE/VIDEOMME_EVAL_SPLIT=test.
+Every row in the supplied manifest is training data.  This module does not
+create train/test splits or run held-out inference; evaluation remains in the
+standalone inference and evaluation entry points.
 """
 
 from __future__ import annotations
@@ -25,7 +20,6 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import torch.nn.functional as F
-from datasets import load_dataset
 from decord import VideoReader, cpu
 
 from llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
@@ -207,7 +201,7 @@ def require_finite(
     )
 
 
-def init_wandb(args, split, train_rows):
+def init_wandb(args, train_rows):
     """Create an optional W&B run without making W&B a training dependency."""
     if not args.wandb:
         return None
@@ -223,9 +217,9 @@ def init_wandb(args, split, train_rows):
     config.update(
         {
             "dataset": args.dataset_name,
+            "dataset_manifest": str(Path(args.dataset_manifest).resolve()),
             "train_rows": len(train_rows),
-            "train_videos": len(split["train"]),
-            "test_videos": len(split["test"]),
+            "train_videos": len({str(row["videoID"]) for row in train_rows}),
             "gpu_visible": os.getenv("CUDA_VISIBLE_DEVICES", "all"),
         }
     )
@@ -243,7 +237,6 @@ def init_wandb(args, split, train_rows):
     run = wandb.init(**init_kwargs)
     run.define_metric("train/step")
     run.define_metric("train/*", step_metric="train/step")
-    run.define_metric("eval/*", step_metric="train/step")
     run.define_metric("adbt_latent/*", step_metric="train/step")
     run.define_metric("adbt_attention/*", step_metric="train/step")
     run.define_metric("adbt_query/*", step_metric="train/step")
@@ -254,67 +247,86 @@ def init_wandb(args, split, train_rows):
     run.define_metric("phase5/*", step_metric="train/step")
     run.define_metric("phase5_1/*", step_metric="train/step")
     run.summary["train_rows"] = len(train_rows)
-    run.summary["train_videos"] = len(split["train"])
-    run.summary["test_videos"] = len(split["test"])
+    run.summary["train_videos"] = len({str(row["videoID"]) for row in train_rows})
     return run
 
 
-def make_split(
-    dataset,
-    split_file: Path,
-    seed: int = 1234,
-    train_fraction: float = 0.8,
-    *,
-    allow_train_test_overlap: bool = False,
-):
-    """Load an explicit split, or create one only when the file is absent.
+def load_training_manifest(manifest_file: Path) -> tuple[str, List[Dict]]:
+    """Load and validate an external four-option MCQA training manifest."""
+    if not manifest_file.is_file():
+        raise FileNotFoundError(f"training manifest does not exist: {manifest_file}")
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("training manifest root must be a JSON object")
+    rows = manifest.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("training manifest must contain a non-empty 'rows' list")
 
-    Test entries must stay unique so evaluation coverage is unambiguous. Train
-    membership is consumed as a set by the trainer, matching its historical
-    one-presentation-per-video behavior.
-    """
-    video_ids = sorted(set(str(x["videoID"]) for x in dataset))
-    known_ids = set(video_ids)
-    if split_file.is_file():
-        split = json.loads(split_file.read_text(encoding="utf-8"))
-        if set(split) != {"train", "test"}:
-            raise ValueError(
-                f"split file must contain exactly train/test lists: {split_file}"
-            )
-        if not isinstance(split["train"], list) or not isinstance(split["test"], list):
-            raise ValueError(f"split train/test values must be lists: {split_file}")
-        split = {
-            "train": [str(value) for value in split["train"]],
-            "test": [str(value) for value in split["test"]],
-        }
-        unknown = (set(split["train"]) | set(split["test"])) - known_ids
-        if unknown:
-            raise ValueError(
-                f"split contains {len(unknown)} video IDs absent from the dataset: "
-                f"{sorted(unknown)}"
-            )
-        if not split["train"] or not split["test"]:
-            raise ValueError(f"split train/test lists must both be non-empty: {split_file}")
-        duplicate_test = len(split["test"]) - len(set(split["test"]))
-        if duplicate_test:
-            raise ValueError(
-                f"split test list contains {duplicate_test} duplicate entries: {split_file}"
-            )
-        overlap = set(split["train"]) & set(split["test"])
-        if overlap and not allow_train_test_overlap:
-            raise ValueError(
-                f"split has {len(overlap)} train/test-overlap videos; pass "
-                "--allow-train-test-overlap only for an explicitly in-sample tuning run"
-            )
-        return split
+    required = {"videoID", "video_path", "question", "options", "answer"}
+    normalized_rows = []
+    paths_by_video = {}
+    for index, source_row in enumerate(rows):
+        if not isinstance(source_row, dict):
+            raise ValueError(f"manifest row {index} must be a JSON object")
+        missing = required - set(source_row)
+        if missing:
+            raise ValueError(f"manifest row {index} is missing fields: {sorted(missing)}")
 
-    rng = random.Random(seed)
-    rng.shuffle(video_ids)
-    cut = int(len(video_ids) * train_fraction)
-    split = {"train": sorted(video_ids[:cut]), "test": sorted(video_ids[cut:])}
-    split_file.parent.mkdir(parents=True, exist_ok=True)
-    split_file.write_text(json.dumps(split, indent=2), encoding="utf-8")
-    return split
+        row = dict(source_row)
+        video_id = str(row["videoID"]).strip()
+        if not video_id:
+            raise ValueError(f"manifest row {index} has an empty videoID")
+        media_path = Path(str(row["video_path"])).expanduser()
+        if not media_path.is_absolute():
+            media_path = manifest_file.parent / media_path
+        media_path = media_path.resolve()
+        if not media_path.is_file():
+            raise FileNotFoundError(
+                f"manifest row {index} video does not exist: {media_path}"
+            )
+        previous_path = paths_by_video.setdefault(video_id, media_path)
+        if previous_path != media_path:
+            raise ValueError(f"videoID {video_id!r} maps to multiple video paths")
+
+        question = str(row["question"]).strip()
+        if not question:
+            raise ValueError(f"manifest row {index} has an empty question")
+        options = row["options"]
+        if not isinstance(options, list) or len(options) != 4:
+            raise ValueError(f"manifest row {index} must contain exactly four options")
+        options = [str(option).strip() for option in options]
+        if any(not option for option in options):
+            raise ValueError(f"manifest row {index} contains an empty option")
+        answer = str(row["answer"]).strip().upper()
+        if answer not in "ABCD" or len(answer) != 1:
+            raise ValueError(f"manifest row {index} answer must be one of A, B, C, D")
+        query_time = row.get("query_time_seconds")
+        if query_time is not None:
+            try:
+                query_time = float(query_time)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"manifest row {index} query_time_seconds must be numeric or null"
+                ) from exc
+            if not math.isfinite(query_time) or query_time <= 0:
+                raise ValueError(
+                    f"manifest row {index} query_time_seconds must be positive and finite"
+                )
+
+        row.update(
+            {
+                "videoID": video_id,
+                "video_path": str(media_path),
+                "question": question,
+                "options": options,
+                "answer": answer,
+                "query_time_seconds": query_time,
+            }
+        )
+        normalized_rows.append(row)
+
+    dataset_name = str(manifest.get("dataset_name") or manifest_file.stem).strip()
+    return dataset_name, normalized_rows
 
 
 def sample_video(
@@ -399,24 +411,9 @@ def sample_video_for_rows(
     return frames, union.astype(np.float32) / source_fps, row_positions
 
 
-def video_path(video_id: str) -> str:
-    root = Path(os.getenv("VIDEOMME_VIDEO_ROOT", "/home/yxd/.cache/huggingface/videomme/data"))
-    for suffix in (".mp4", ".MP4", ".mkv"):
-        candidate = root / f"{video_id}{suffix}"
-        if candidate.exists():
-            return str(candidate)
-    raise FileNotFoundError(f"VideoMME video not found for {video_id} below {root}")
-
-
 def row_video_path(row: Dict) -> str:
-    """Resolve media from a normalized manifest or the legacy VideoMME cache."""
-    explicit = row.get("video_path")
-    if explicit:
-        path = Path(str(explicit))
-        if not path.is_file():
-            raise FileNotFoundError(f"manifest video does not exist: {path}")
-        return str(path)
-    return video_path(str(row["videoID"]))
+    """Return the validated media path from an external training row."""
+    return str(row["video_path"])
 
 
 def rows_end_time(rows: List[Dict]) -> float | None:
@@ -486,13 +483,13 @@ def build_inputs(model, tokenizer, prompt_ids: torch.Tensor, answer: str, latent
 
 
 def option_token_ids(tokenizer) -> torch.Tensor:
-    """Return the single-token ids used by VideoMME answers A/B/C/D."""
+    """Return the single-token ids used by four-option MCQA answers."""
     ids = []
     for letter in "ABCD":
         encoded = tokenizer.encode(letter, add_special_tokens=False)
         if len(encoded) != 1:
             raise ValueError(
-                f"VideoMME option {letter!r} is not one token: {encoded}"
+                f"MCQA option {letter!r} is not one token: {encoded}"
             )
         ids.append(encoded[0])
     return torch.tensor(ids, dtype=torch.long)
@@ -522,7 +519,7 @@ def frozen_teacher_option_logits(
     answer_hidden = outputs.last_hidden_state[:, :-1][answer_mask]
     if answer_hidden.shape[0] != 1:
         raise RuntimeError(
-            "VideoMME teacher expects exactly one answer token, got "
+            "MCQA teacher expects exactly one answer token, got "
             f"{answer_hidden.shape[0]}"
         )
     logits = model.lm_head(answer_hidden)
@@ -559,7 +556,7 @@ def frozen_teacher_visual_importance(
     answer_labels = shifted_labels[answer_mask]
     if answer_hidden.shape[0] != 1:
         raise RuntimeError(
-            "VideoMME routing teacher expects exactly one answer token, got "
+            "MCQA routing teacher expects exactly one answer token, got "
             f"{answer_hidden.shape[0]}"
         )
     answer_logits = model.lm_head(answer_hidden)
@@ -642,130 +639,6 @@ def encode_visual(model, image_processor, frames: np.ndarray, batch_size: int):
     return torch.cat(chunks, dim=0)
 
 
-def evaluate_small_set(
-    model,
-    tokenizer,
-    image_processor,
-    adbt,
-    audio_encoder,
-    dataset,
-    split,
-    max_videos: int,
-    max_frames: int,
-    vision_batch_size: int,
-    video_offset: int = 0,
-):
-    """Run a small causal held-out diagnostic without building autograd graphs.
-
-    This intentionally reports teacher-forced answer loss and first-token
-    accuracy, not the official generated VideoMME metric.  It is called during
-    training to detect whether the adapter is learning, while keeping the
-    evaluation memory bounded to one video at a time.
-    """
-    all_test_ids = sorted(set(str(video_id) for video_id in split["test"]))
-    # Rotate the diagnostic window.  Evaluating the same first four videos at
-    # every checkpoint can make the metric look artificially frozen even when
-    # the adapter changes elsewhere in the held-out split.
-    if all_test_ids:
-        video_offset = int(video_offset) % len(all_test_ids)
-        test_ids = all_test_ids[video_offset:] + all_test_ids[:video_offset]
-    else:
-        test_ids = []
-    if max_videos > 0:
-        test_ids = test_ids[:max_videos]
-    rows_by_video = {}
-    for row in dataset:
-        video_id = str(row["videoID"])
-        if video_id in test_ids:
-            rows_by_video.setdefault(video_id, []).append(row)
-
-    model_training = model.training
-    model_inner_training = getattr(model.model, "training", False)
-    adbt_training = adbt.training
-    model.eval()
-    adbt.eval()
-    loss_sum = 0.0
-    first_token_correct = 0
-    exact_match_correct = 0
-    examples = 0
-    frames_seen = 0
-    try:
-        with torch.no_grad():
-            for video_id in test_ids:
-                rows = rows_by_video.get(video_id, [])
-                if not rows:
-                    continue
-                path = row_video_path(rows[0])
-                frames, timestamps, row_frame_positions = sample_video_for_rows(
-                    path, rows, max_frames=max_frames
-                )
-                visual = encode_visual(model, image_processor, frames, vision_batch_size)
-                audio = None
-                audio_embeddings = None
-                audio_timestamps = torch.as_tensor(
-                    timestamps, device=visual.device, dtype=torch.float32
-                )
-                if adbt.stage >= 2:
-                    audio = audio_encoder.encode_video(
-                        path, timestamps, visual.device, ablation="real"
-                    )
-                    audio_embeddings = audio["embeddings"].to(
-                        visual.device, dtype=torch.float32
-                    )
-                    audio_timestamps = audio["end_timestamps"].to(visual.device)
-                adbt.to(device=visual.device, dtype=torch.float32)
-                latents, _ = adbt(
-                    visual.float(),
-                    audio_embeddings=audio_embeddings,
-                    end_timestamps=audio_timestamps,
-                )
-                frames_seen += int(frames.shape[0])
-                for row_index, row in enumerate(rows):
-                    prompt_ids = make_prompt(row, tokenizer)
-                    positions = torch.as_tensor(
-                        row_frame_positions[row_index], device=latents.device
-                    )
-                    row_latents = latents.index_select(0, positions)
-                    embeds, labels, mask = build_inputs(
-                        model,
-                        tokenizer,
-                        prompt_ids,
-                        row["answer"],
-                        row_latents,
-                    )
-                    outputs = model.model(
-                        inputs_embeds=embeds,
-                        attention_mask=mask,
-                        use_cache=False,
-                        return_dict=True,
-                    )
-                    shifted_labels = labels[:, 1:].to(outputs.last_hidden_state.device)
-                    shifted_hidden = outputs.last_hidden_state[:, :-1]
-                    answer_mask = shifted_labels.ne(-100)
-                    answer_hidden = shifted_hidden[answer_mask]
-                    answer_labels = shifted_labels[answer_mask]
-                    answer_logits = model.lm_head(answer_hidden)
-                    loss_sum += float(F.cross_entropy(answer_logits.float(), answer_labels).cpu())
-                    prediction = answer_logits.argmax(dim=-1)
-                    if prediction.numel() and answer_labels.numel():
-                        first_token_correct += int(prediction[0].item() == answer_labels[0].item())
-                    exact_match_correct += int(torch.equal(prediction, answer_labels))
-                    examples += 1
-                del latents, audio, audio_embeddings, audio_timestamps, visual, frames, timestamps, row_frame_positions
-    finally:
-        model.train(model_training)
-        model.model.train(model_inner_training)
-        adbt.train(adbt_training)
-    return {
-        "loss": loss_sum / max(1, examples),
-        "first_token_accuracy": first_token_correct / max(1, examples),
-        "exact_match_accuracy": exact_match_correct / max(1, examples),
-        "examples": examples,
-        "videos": len(test_ids),
-        "frames": frames_seen,
-    }
-
-
 def train(args):
     if args.hard_example_repeats < 1:
         raise ValueError("--hard-example-repeats must be at least 1")
@@ -818,31 +691,7 @@ def train(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if args.dataset_manifest:
-        manifest = json.loads(Path(args.dataset_manifest).read_text(encoding="utf-8"))
-        dataset = manifest["rows"]
-        args.dataset_name = str(manifest.get("dataset_name", Path(args.dataset_manifest).stem))
-        if args.training_objective != "phase4":
-            raise ValueError(
-                "normalized external manifests currently support the pure-QA "
-                "phase4 objective only"
-            )
-    else:
-        dataset = load_dataset(
-            "lmms-lab/Video-MME",
-            cache_dir=args.hf_cache,
-            download_mode="reuse_dataset_if_exists",
-        )["test"]
-        args.dataset_name = "lmms-lab/Video-MME"
-    split = make_split(
-        dataset,
-        Path(args.split_file),
-        args.seed,
-        0.8,
-        allow_train_test_overlap=args.allow_train_test_overlap,
-    )
-    train_ids = set(split["train"])
-    train_rows = [row for row in dataset if str(row["videoID"]) in train_ids]
+    args.dataset_name, train_rows = load_training_manifest(Path(args.dataset_manifest))
     if args.hard_example_result:
         hard_result = json.loads(
             Path(args.hard_example_result).read_text(encoding="utf-8")
@@ -890,15 +739,17 @@ def train(args):
         )
     if args.max_train_samples:
         train_rows = train_rows[: args.max_train_samples]
+    if not train_rows:
+        raise ValueError("training dataset contains zero rows after filtering")
+    train_video_count = len({str(row["videoID"]) for row in train_rows})
     LOGGER.info(
-        "%s rows: %d; train rows: %d; train videos: %d; test videos: %d",
+        "training dataset=%s manifest=%s rows=%d videos=%d",
         args.dataset_name,
-        len(dataset),
+        Path(args.dataset_manifest).resolve(),
         len(train_rows),
-        len(split["train"]),
-        len(split["test"]),
+        train_video_count,
     )
-    wandb_run = init_wandb(args, split, train_rows)
+    wandb_run = init_wandb(args, train_rows)
 
     model_name = get_model_name_from_path(args.pretrained)
     tokenizer, model, image_processor, _ = load_pretrained_model(
@@ -1093,24 +944,15 @@ def train(args):
     av_queue = AVFeatureQueue(args.av_queue_size)
     previous_video_audio = None
     video_option_token_ids = option_token_ids(tokenizer)
-    next_eval_step = None
-    if args.eval_every_steps > 0:
-        next_eval_step = ((global_step // args.eval_every_steps) + 1) * args.eval_every_steps
     optimizer.zero_grad(set_to_none=True)
     attention_collapse_streak = 0
     rows_by_video = {}
     for row in train_rows:
         rows_by_video.setdefault(str(row["videoID"]), []).append(row)
-    duplicate_entries = len(split["train"]) - len(set(split["train"]))
-    if duplicate_entries:
-        LOGGER.warning(
-            "split contains %d duplicate train entries; set membership deduplicates them",
-            duplicate_entries,
-        )
     skipped_videos = {str(value) for value in args.skip_video}
     unknown_skips = skipped_videos - set(rows_by_video)
     if unknown_skips:
-        LOGGER.warning("requested skip videos are not in the train split: %s", sorted(unknown_skips))
+        LOGGER.warning("requested skip videos are not in the training manifest: %s", sorted(unknown_skips))
     effective_skips = skipped_videos & set(rows_by_video)
     if effective_skips:
         LOGGER.warning(
@@ -1237,7 +1079,8 @@ def train(args):
                             "global_step": global_step,
                             "args": vars(args),
                             "init_adapter": args.init_adapter,
-                            "split_file": args.split_file,
+                            "dataset_manifest": str(Path(args.dataset_manifest).resolve()),
+                            "dataset_name": args.dataset_name,
                         },
                         progress,
                     )
@@ -1246,10 +1089,9 @@ def train(args):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 continue
-            # A video has three questions in VideoMME. Reuse its frozen
-            # visual/audio features, but run each language loss separately so
-            # the large frozen LLM activation graph is never accumulated three
-            # times on the 80-GiB cards.
+            # Reuse frozen visual/audio features for questions that share one
+            # video, but run each language loss separately so multiple frozen
+            # LLM activation graphs are never accumulated at once.
             for row_index, row in enumerate(rows):
                 prompt_ids = make_prompt(row, tokenizer)
                 teacher_importance = None
@@ -1858,96 +1700,6 @@ def train(args):
                         },
                         step=global_step,
                     )
-            # Evaluate only after the current video's features are released.
-            # A video has three questions, so the boundary may be crossed by a
-            # few steps; the metric is tagged with the actual completed step.
-            if next_eval_step is not None and global_step >= next_eval_step:
-                del (
-                    visual,
-                    audio,
-                    frames,
-                    timestamps,
-                    latents,
-                    attention,
-                    embeds,
-                    labels,
-                    mask,
-                    backbone_outputs,
-                    hidden,
-                    shifted_labels,
-                    shifted_hidden,
-                    answer_mask,
-                    answer_hidden,
-                    answer_labels,
-                    all_answer_logits,
-                    qa_loss,
-                    av_loss,
-                    cf_loss,
-                    route_loss,
-                    feature_loss,
-                    av_routing_loss,
-                    loss,
-                    raw_loss,
-                    audio_embeddings,
-                    audio_timestamps,
-                    wrong_audio_cpu,
-                    wrong_audio_embeddings,
-                    wrong_latents,
-                    wrong_embeds,
-                    wrong_labels,
-                    wrong_mask,
-                    model_embeds,
-                    model_labels,
-                    model_mask,
-                    av_result,
-                    option_logits,
-                    answer_index,
-                    teacher_option_logits,
-                    teacher_importance,
-                    teacher_feature_target,
-                )
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                eval_metrics = evaluate_small_set(
-                    model,
-                    tokenizer,
-                    image_processor,
-                    adbt,
-                    audio_encoder,
-                    dataset,
-                    split,
-                    max_videos=args.eval_max_videos,
-                    max_frames=args.eval_max_frames,
-                    vision_batch_size=args.vision_batch_size,
-                    video_offset=(global_step // max(1, args.eval_every_steps) - 1)
-                    * max(1, args.eval_max_videos),
-                )
-                LOGGER.info(
-                    "heldout eval step=%d videos=%d examples=%d loss=%.5f first_token_acc=%.4f exact_acc=%.4f",
-                    global_step,
-                    eval_metrics["videos"],
-                    eval_metrics["examples"],
-                    eval_metrics["loss"],
-                    eval_metrics["first_token_accuracy"],
-                    eval_metrics["exact_match_accuracy"],
-                )
-                if wandb_run is not None:
-                    wandb_run.log(
-                        {
-                            "train/step": global_step,
-                            "eval/loss": eval_metrics["loss"],
-                            "eval/first_token_accuracy": eval_metrics["first_token_accuracy"],
-                            "eval/exact_match_accuracy": eval_metrics["exact_match_accuracy"],
-                            "eval/examples": eval_metrics["examples"],
-                            "eval/videos": eval_metrics["videos"],
-                            "eval/frames": eval_metrics["frames"],
-                        },
-                        step=global_step,
-                    )
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                while next_eval_step <= global_step:
-                    next_eval_step += args.eval_every_steps
             overall_video_idx = video_offset + video_idx + 1
             if (
                 args.save_every_videos > 0
@@ -1963,7 +1715,8 @@ def train(args):
                     "global_step": global_step,
                     "args": vars(args),
                     "init_adapter": args.init_adapter,
-                    "split_file": args.split_file,
+                    "dataset_manifest": str(Path(args.dataset_manifest).resolve()),
+                    "dataset_name": args.dataset_name,
                 }, progress)
                 LOGGER.info("saved progress checkpoint %s", progress)
         out = Path(args.output_dir) / f"adbt_epoch_{epoch + 1}.pt"
@@ -1975,7 +1728,8 @@ def train(args):
             "global_step": global_step,
             "args": vars(args),
             "init_adapter": args.init_adapter,
-            "split_file": args.split_file,
+            "dataset_manifest": str(Path(args.dataset_manifest).resolve()),
+            "dataset_name": args.dataset_name,
         }, out)
         LOGGER.info("saved %s", out)
     if torch.cuda.is_available():
@@ -1995,18 +1749,16 @@ def train(args):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pretrained", default="lmms-lab/llava-onevision-qwen2-7b-ov")
-    parser.add_argument("--hf-cache", default="/home/yxd/.cache/huggingface")
     parser.add_argument("--beats-checkpoint", default="/nvme_data/pkt/huggingface/modules/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt1.pt")
     parser.add_argument(
         "--dataset-manifest",
-        default="",
+        required=True,
         help=(
-            "Optional normalized local MCQA manifest. Rows must contain "
-            "videoID, video_path, question, options, answer, and optionally "
-            "query_time_seconds. Without it the original VideoMME loader is used."
+            "External MCQA training manifest. Every row is used for training and must "
+            "contain videoID, video_path, question, four options, answer, and optionally "
+            "query_time_seconds. Relative video paths are resolved from the manifest."
         ),
     )
-    parser.add_argument("--split-file", default="./results/adbt_videomme_split.json")
     parser.add_argument("--output-dir", default="./results/adbt-checkpoints")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--max-train-samples", type=int, default=0)
@@ -2038,20 +1790,12 @@ def parse_args():
         help="Repeat each selected hard-example row this many times per curriculum epoch.",
     )
     parser.add_argument(
-        "--allow-train-test-overlap",
-        action="store_true",
-        help=(
-            "Allow an explicit split to place videos in both train and test. "
-            "This is intended only for disclosed in-sample tuning experiments."
-        ),
-    )
-    parser.add_argument(
         "--skip-video",
         action="append",
         default=[],
         help=(
-            "Explicit train-split videoID to skip after a documented media-decode "
-            "failure. May be repeated; the held-out split is never altered."
+            "Explicit training-manifest videoID to skip after a documented media-decode "
+            "failure. May be repeated."
         ),
     )
     parser.add_argument("--num-queries", type=int, default=32)
@@ -2128,7 +1872,7 @@ def parse_args():
         type=float,
         default=1.0,
         help=(
-            "Weight of the supervised VideoMME QA loss in phase5_1. "
+            "Weight of the supervised MCQA loss in phase5_1. "
             "Set to zero only for the literal objective-only ablations in "
             "docs/experience.md; the historical Phase-5.1 default remains 1."
         ),
@@ -2165,24 +1909,6 @@ def parse_args():
         help="Log per-module gradient and optimizer-update norms every N question steps; 0 disables it.",
     )
     parser.add_argument("--save-every-videos", type=int, default=20)
-    parser.add_argument(
-        "--eval-every-steps",
-        type=int,
-        default=100,
-        help="Run the small held-out diagnostic every N completed question steps; 0 disables it.",
-    )
-    parser.add_argument(
-        "--eval-max-videos",
-        type=int,
-        default=4,
-        help="Number of held-out videos used by the periodic diagnostic; 0 uses all test videos.",
-    )
-    parser.add_argument(
-        "--eval-max-frames",
-        type=int,
-        default=32,
-        help="Maximum frames per held-out video for the periodic diagnostic.",
-    )
     checkpoint_group = parser.add_mutually_exclusive_group()
     checkpoint_group.add_argument(
         "--resume",
@@ -2212,7 +1938,7 @@ def parse_args():
         default=os.getenv("WANDB_TRAIN", "0").lower() in {"1", "true", "yes", "on"},
         help="Log training metrics to Weights & Biases.",
     )
-    parser.add_argument("--wandb-project", default=os.getenv("WANDB_PROJECT", "AudioRouter-videomme"))
+    parser.add_argument("--wandb-project", default=os.getenv("WANDB_PROJECT", "AudioRouter"))
     parser.add_argument("--wandb-entity", default=os.getenv("WANDB_ENTITY", ""))
     parser.add_argument("--wandb-run-name", default=os.getenv("WANDB_NAME", ""))
     parser.add_argument("--wandb-run-id", default=os.getenv("WANDB_RUN_ID", ""))

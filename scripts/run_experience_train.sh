@@ -30,6 +30,7 @@ export TOKENIZERS_PARALLELISM=false
 export CUDA_VISIBLE_DEVICES="${PHYSICAL_GPU}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export BEATS_EMBEDDING_CACHE=/home/yxd/AudioRouter/results/cache/beats
+: "${TRAIN_DATASET_MANIFEST:?set TRAIN_DATASET_MANIFEST to an external MCQA manifest}"
 
 EXTRA_ARGS=()
 if [[ -n "${RESUME_CHECKPOINT}" ]]; then
@@ -43,7 +44,7 @@ echo "[EXPERIENCE TRAIN] gpu=${PHYSICAL_GPU} stage=${BOTTLENECK_STAGE} queries=$
 
 python -m AudioRouter.train_adbt_videomme \
   --epochs "${EPOCHS}" \
-  --split-file ./results/adbt_videomme_split.json \
+  --dataset-manifest "${TRAIN_DATASET_MANIFEST}" \
   --output-dir "${OUTPUT_DIR}" \
   --train-max-frames 32 \
   --num-queries "${NUM_QUERIES}" \
@@ -66,11 +67,8 @@ python -m AudioRouter.train_adbt_videomme \
   --rank-log-every 30 \
   --module-log-every 30 \
   --save-every-videos 20 \
-  --eval-every-steps 100 \
-  --eval-max-videos 4 \
-  --eval-max-frames 32 \
   --wandb \
-  --wandb-project AudioRouter-videomme \
+  --wandb-project AudioRouter \
   --wandb-entity amd_yes \
   --wandb-run-name "${RUN_NAME}" \
   --wandb-mode online \

@@ -39,7 +39,7 @@ Real-Time sample. Only the first 4 seconds of video and audio are available to
 the model. AudioRouter predicts the labeled answer, **C. A building with
 BASECAMP written on it**, with **99.24%** probability.
 
-[![Watch the AudioRouter inference demo](assets/02_sample_366.jpg)](assets/02_sample_366.mp4)
+[![Watch the AudioRouter inference demo](assets/02_sample_366.gif)](assets/02_sample_366.mp4)
 
 Click the preview to play or download the full MP4 with its causal-prefix
 audio. The colored overlay is the audio-conditioned visual routing map; the
@@ -267,8 +267,66 @@ StreamingBench are documented in `AGENTS_AR.md`.
 ## Training
 
 Training updates only the Audio Query Generator and
-`AudioConditionedBottleneck`; the VLM and BEATs stay frozen. The exact staged
-training commands, splits, and hyperparameters are in `AGENTS_AR.md`.
+`AudioConditionedBottleneck`; the VLM and BEATs stay frozen. Training now reads
+an external JSON manifest and uses every row in that manifest. It does not
+create a train/test split and does not run inference or held-out evaluation
+inside the training process. Run the standalone evaluation commands above when
+you need metrics.
+
+The manifest root must contain a non-empty `rows` list. Each row represents one
+four-option multiple-choice training example:
+
+```json
+{
+  "dataset_name": "my_external_dataset",
+  "rows": [
+    {
+      "videoID": "video_0001",
+      "video_path": "videos/video_0001.mp4",
+      "question_id": "question_0001",
+      "question": "What is the person doing?",
+      "options": [
+        "A. Walking",
+        "B. Cooking",
+        "C. Reading",
+        "D. Sleeping"
+      ],
+      "answer": "B",
+      "query_time_seconds": null
+    }
+  ]
+}
+```
+
+Required row fields are `videoID`, `video_path`, `question`, `options`, and
+`answer`. `options` must contain exactly four entries and `answer` must be one
+of `A`, `B`, `C`, or `D`. `question_id` is optional for ordinary training but
+is needed by the optional hard-example filtering workflow.
+`query_time_seconds` is optional: omit it or set it to `null` for whole-video
+training; set it to a positive number for causal-prefix training. Relative
+`video_path` values are resolved relative to the manifest file, so an external
+dataset can be kept outside this repository.
+
+Example:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m AudioRouter.train_adbt_videomme \
+  --dataset-manifest /path/to/external_dataset/train_manifest.json \
+  --output-dir results/my-external-training \
+  --epochs 3 \
+  --train-max-frames 32 \
+  --num-queries 64 \
+  --bottleneck-stage 3 \
+  --architecture phase4 \
+  --value-mode native \
+  --latent-norm none \
+  --training-objective phase4 \
+  --beats-checkpoint "$BEATS_CHECKPOINT"
+```
+
+Use `--max-train-samples` for a smoke test. The manifest is validated before
+the model is loaded, including media paths, MCQA fields, answers, and optional
+query timestamps.
 
 ## Notes
 

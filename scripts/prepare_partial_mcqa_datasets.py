@@ -11,9 +11,7 @@ import ast
 import csv
 import hashlib
 import json
-import random
 import re
-from collections import defaultdict
 from pathlib import Path
 
 from decord import VideoReader, cpu
@@ -168,108 +166,6 @@ def build_mlvu_full_mcqa(snapshot: Path) -> dict:
     }
 
 
-def build_mlvu_full_split(
-    rows: list[dict],
-    *,
-    seed: int = 1234,
-    train_fraction: float = 0.8,
-    ego_split: dict | None = None,
-) -> dict:
-    """Create a deterministic task-stratified, media-grouped MLVU split.
-
-    When supplied, the historical Ego split is preserved exactly so a
-    checkpoint previously trained on that split does not contaminate the new
-    Ego validation subset. Video IDs backed by the same resolved media file are
-    assigned together even when that file is reused by multiple tasks.
-    """
-    task_videos: dict[str, set[str]] = defaultdict(set)
-    video_task = {}
-    video_path = {}
-    for row in rows:
-        task_type = str(row["task_type"])
-        video_id = str(row["videoID"])
-        path = str(Path(row["video_path"]).resolve())
-        task_videos[task_type].add(video_id)
-        if video_id in video_task and video_task[video_id] != task_type:
-            raise ValueError(f"video ID belongs to multiple MLVU tasks: {video_id}")
-        if video_id in video_path and video_path[video_id] != path:
-            raise ValueError(f"video ID maps to multiple media files: {video_id}")
-        video_task[video_id] = task_type
-        video_path[video_id] = path
-
-    path_groups: dict[str, set[str]] = defaultdict(set)
-    for video_id, path in video_path.items():
-        path_groups[path].add(video_id)
-
-    target_test = {
-        task_type: len(ids) - int(len(ids) * train_fraction)
-        for task_type, ids in task_videos.items()
-    }
-    assignment = {}
-    if ego_split is not None:
-        ego_train = {f"ego::{value}" for value in ego_split["train"]}
-        ego_test = {f"ego::{value}" for value in ego_split["test"]}
-        if ego_train | ego_test != task_videos.get("ego", set()):
-            raise ValueError("historical Ego split does not cover full Ego videos")
-        if ego_train & ego_test:
-            raise ValueError("historical Ego split contains train/test overlap")
-        for side, video_ids in (("train", ego_train), ("test", ego_test)):
-            for video_id in video_ids:
-                path = video_path[video_id]
-                previous = assignment.get(path)
-                if previous is not None and previous != side:
-                    raise ValueError("historical Ego split divides reused media")
-                assignment[path] = side
-
-    test_counts = defaultdict(int)
-    for path, side in assignment.items():
-        if side == "test":
-            for video_id in path_groups[path]:
-                test_counts[video_task[video_id]] += 1
-    for task_type, count in test_counts.items():
-        if count > target_test[task_type]:
-            raise ValueError(f"fixed split exceeds test target for {task_type}")
-
-    remaining = [path for path in sorted(path_groups) if path not in assignment]
-    random.Random(seed).shuffle(remaining)
-    # Prefer multi-task media groups first; single-task groups can then fill any
-    # remaining per-task deficits exactly.
-    remaining.sort(key=lambda path: -len({video_task[v] for v in path_groups[path]}))
-    for path in remaining:
-        additions = defaultdict(int)
-        for video_id in path_groups[path]:
-            additions[video_task[video_id]] += 1
-        fits = all(
-            test_counts[task_type] + count <= target_test[task_type]
-            for task_type, count in additions.items()
-        )
-        needed = any(
-            test_counts[task_type] < target_test[task_type]
-            for task_type in additions
-        )
-        side = "test" if fits and needed else "train"
-        assignment[path] = side
-        if side == "test":
-            for task_type, count in additions.items():
-                test_counts[task_type] += count
-
-    if dict(test_counts) != target_test:
-        raise ValueError(
-            f"could not satisfy task-stratified test targets: "
-            f"actual={dict(test_counts)} expected={target_test}"
-        )
-
-    train = []
-    test = []
-    for path, video_ids in path_groups.items():
-        destination = test if assignment[path] == "test" else train
-        destination.extend(video_ids)
-
-    if set(train) & set(test):
-        raise ValueError("generated full MLVU split contains train/test overlap")
-    return {"train": sorted(train), "test": sorted(test)}
-
-
 def streaming_video_id(question_id: str) -> str:
     match = re.search(r"_sample_(\d+)_\d+$", question_id)
     if not match:
@@ -354,18 +250,6 @@ def write_manifest(payload: dict, path: Path) -> None:
     )
 
 
-def write_split(payload: dict, path: Path) -> None:
-    if path.is_file():
-        existing = json.loads(path.read_text(encoding="utf-8"))
-        if existing != payload:
-            raise ValueError(f"refusing to overwrite a different split: {path}")
-        print(f"verified unchanged split -> {path}")
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"split: train={len(payload['train'])} test={len(payload['test'])} -> {path}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -375,12 +259,6 @@ def main() -> None:
     )
     parser.add_argument("--streaming-root", default="/home/yxd/pkt/streaming/dataset")
     parser.add_argument("--output-dir", default="results/dataset_manifests")
-    parser.add_argument("--split-output-dir", default="results/dataset_splits")
-    parser.add_argument("--mlvu-full-seed", type=int, default=1234)
-    parser.add_argument(
-        "--mlvu-ego-split",
-        default="results/dataset_splits/mlvu_ego_seed1234_80_20.json",
-    )
     parser.add_argument(
         "--dataset",
         choices=("all", "mlvu", "mlvu-full", "streaming"),
@@ -393,15 +271,6 @@ def main() -> None:
     if args.dataset in {"all", "mlvu-full"}:
         full_manifest = build_mlvu_full_mcqa(Path(args.mlvu_snapshot))
         write_manifest(full_manifest, output_dir / "mlvu_full_mcqa.json")
-        ego_split = json.loads(Path(args.mlvu_ego_split).read_text(encoding="utf-8"))
-        full_split = build_mlvu_full_split(
-            full_manifest["rows"], seed=args.mlvu_full_seed, ego_split=ego_split
-        )
-        write_split(
-            full_split,
-            Path(args.split_output_dir)
-            / f"mlvu_full_mcqa_seed{args.mlvu_full_seed}_pathgroup_80_20.json",
-        )
     if args.dataset in {"all", "streaming"}:
         write_manifest(
             build_streaming(Path(args.streaming_root)),
